@@ -4,11 +4,11 @@ A Claude Code skill that turns any machine into a 3D simulator you can take apar
 
 Ask how something works. Claude builds it as one offline HTML page: the machine runs in the middle, every panel around it reads the real numbers, a button opens the part doing the work, and when nobody touches it the page tours itself.
 
-![V8 four-stroke simulator](docs/v8.gif)
+![Mellis HB-7 robotic bee simulator](docs/bee.gif)
 
-| Cessna 337 landing gear | Strandbeest SB-10 |
+| Telson SC-8 robotic scorpion | Pelagos OC-8 robotic octopus |
 |---|---|
-| ![Cessna 337 main landing gear](docs/cessna.jpg) | ![Strandbeest SB-10](docs/strandbeest.jpg) |
+| ![Telson SC-8 robotic scorpion](docs/scorpion.gif) | ![Pelagos OC-8 robotic octopus](docs/octopus.gif) |
 
 ## Install
 
