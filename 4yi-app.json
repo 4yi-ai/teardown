@@ -9,7 +9,7 @@
       "port": 3000,
       "healthPath": "/healthz",
       "storage": { "sizeGb": 1, "mountPath": "/data", "fsGroup": 1000 },
-      "resources": { "cpu": 2, "memoryMb": 2048 }
+      "resources": { "cpu": 1, "memoryMb": 2048 }
     }
   ],
   "models": [
