@@ -7,16 +7,21 @@ import {generateSimulator} from './generator.mjs';
 import {createJobStore} from './jobs.mjs';
 import {createVisualReviewer} from './visual-review.mjs';
 import {createLocalVisualRenderer} from './visual-client.mjs';
+import {createRouterIdentityVerifier} from './router-identity.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const mime = {'.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml'};
 const previewCsp = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'";
 function json(res, status, value) { res.writeHead(status, {'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}); res.end(JSON.stringify(value)); }
-async function body(req) {
-  if (!(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw new Error('invalid_content_type');
+async function rawBody(req) {
   const chunks = []; let size = 0;
   for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('body_too_large'); chunks.push(chunk); }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new Error('invalid_json'); }
+  return Buffer.concat(chunks);
+}
+async function body(req) {
+  if (!(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw new Error('invalid_content_type');
+  const bytes = req.signedBody ?? await rawBody(req);
+  try { return JSON.parse(bytes.toString('utf8')); } catch { throw new Error('invalid_json'); }
 }
 function scopeFor(req, local) {
   if (local) return {org: 'local', user: 'local'};
@@ -32,10 +37,15 @@ function sameOrigin(req, local) {
     return new URL(origin).host === expected;
   } catch { return false; }
 }
-export function createApp({store, local = false, dist = path.join(root, 'web-dist')}) {
+export function createApp({store, local = false, verifyIdentity, dist = path.join(root, 'web-dist')}) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local');
     if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, {ok: true});
+    if (!local) {
+      try { req.signedBody = req.method === 'GET' || req.method === 'HEAD' ? Buffer.alloc(0) : await rawBody(req); }
+      catch { return json(res, 413, {error: 'body_too_large'}); }
+      if (!verifyIdentity || !verifyIdentity(req, req.signedBody)) return json(res, 401, {error: 'authentication_required'});
+    }
     const scope = scopeFor(req, local);
     if (!scope) return json(res, 401, {error: 'authentication_required'});
     try {
@@ -71,15 +81,13 @@ export function createApp({store, local = false, dist = path.join(root, 'web-dis
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const local = process.env.TEARDOWN_LOCAL_MODE === '1';
-  // Identity headers are trustworthy only when direct pod access is blocked
-  // and the 4yi router is the sole ingress. This flag is a deployment gate,
-  // not proof that the network boundary exists.
-  if (!local && process.env.TEARDOWN_TRUSTED_PROXY !== '1') throw new Error('trusted_proxy_boundary_not_confirmed');
+  const dataDirectory = process.env.TEARDOWN_DATA_DIR || path.join(root, 'teardown-out', 'jobs');
+  const verifyIdentity = local ? undefined : createRouterIdentityVerifier({key: process.env.FOURYI_ROUTER_IDENTITY_KEY, hostname: process.env.XCLAW_APP_HOSTNAME, replayDirectory: path.join(dataDirectory, 'router-nonces')});
   const gateway = createGateway({baseUrl: process.env.OPENAI_API_BASE || process.env.OPENAI_BASE_URL, apiKey: process.env.OPENAI_API_KEY, model: process.env.TEXT_MODEL, reasoningEffort: process.env.TEARDOWN_REASONING_EFFORT || (process.env.TEXT_MODEL === 'gpt-6-luna' ? 'none' : undefined)});
   const visualUrl = process.env.TEARDOWN_LOCAL_VISUAL_URL;
   if (visualUrl && !local) throw new Error('local_visual_renderer_requires_local_mode');
   const visualGateway = visualUrl ? createGateway({baseUrl: process.env.OPENAI_API_BASE || process.env.OPENAI_BASE_URL, apiKey: process.env.OPENAI_API_KEY, model: process.env.TEARDOWN_VISION_MODEL || process.env.TEXT_MODEL}) : null;
   const visualReview = visualUrl ? createVisualReviewer({render: createLocalVisualRenderer({url: visualUrl}), gateway: visualGateway}) : undefined;
-  const store = createJobStore({directory: process.env.TEARDOWN_DATA_DIR || path.join(root, 'teardown-out', 'jobs'), generate: ({description, signal}) => generateSimulator({gateway, description, signal, visualReview})});
-  createApp({store, local}).listen(Number(process.env.PORT || 3000), local ? '127.0.0.1' : '0.0.0.0');
+  const store = createJobStore({directory: dataDirectory, generate: ({description, signal}) => generateSimulator({gateway, description, signal, visualReview})});
+  createApp({store, local, verifyIdentity}).listen(Number(process.env.PORT || 3000), local ? '127.0.0.1' : '0.0.0.0');
 }

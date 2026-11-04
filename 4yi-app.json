@@ -8,6 +8,7 @@
       "route": "public",
       "port": 3000,
       "healthPath": "/healthz",
+      "env": { "FOURYI_ROUTER_IDENTITY_REQUIRED": "1" },
       "storage": { "sizeGb": 1, "mountPath": "/data", "fsGroup": 1000 },
       "resources": { "cpu": 1, "memoryMb": 2048 }
     }
