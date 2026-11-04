@@ -58,3 +58,11 @@ node sims/build.mjs strandbeest-live
 Built on [whaleyxbt/claude-motion](https://github.com/whaleyxbt/claude-motion) (MIT): the runtime, frame capture, sound engine and review rules come from there. Recorded samples are CC0 from Freesound, prepared by [Barty-Bart/motion-graphics](https://github.com/Barty-Bart/motion-graphics); sources in `sfx/samples/SOURCES.md`.
 
 MIT licence.
+
+## 4yi Web prototype
+
+This branch contains a local prototype for text-to-simulator generation. It is not yet a complete implementation of the upstream skill or a production-ready marketplace release. See [4yi Web integration notes](docs/4yi-web-integration.md) for the verified scope and remaining isolation and visual-review work.
+
+After `npm ci`, build the interface with `npm run build:web`. To run locally, provide `OPENAI_API_BASE`, `OPENAI_API_KEY`, and `TEXT_MODEL` in your process environment, set `TEARDOWN_LOCAL_MODE=1`, then run `npm run start:web`. Local mode listens on `127.0.0.1:3000`; never enable it for a shared deployment. For a model requiring it, set `TEARDOWN_REASONING_EFFORT=none`. Do not commit credentials.
+
+Run the local tests with `npm run test:web`. Each user installs a dedicated instance through their personal organization. Before release, verify that each instance is accessible only to authorized users, that the trusted-router boundary holds, and that the installed model/token configuration and persistent storage work. The checked-in `4yi-app.json` is a deployment candidate, not evidence that those checks have passed.

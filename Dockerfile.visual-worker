@@ -1,0 +1,7 @@
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
+WORKDIR /worker
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY web/visual-worker.mjs ./visual-worker.mjs
+USER pwuser
+ENTRYPOINT ["node", "visual-worker.mjs"]

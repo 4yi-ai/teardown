@@ -2,3 +2,4 @@ node_modules/
 teardown-out/
 __pycache__/
 *.pyc
+web-dist/

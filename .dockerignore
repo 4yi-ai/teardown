@@ -1,0 +1,6 @@
+.git
+node_modules
+teardown-out
+web-dist
+__pycache__
+*.pyc
