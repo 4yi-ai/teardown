@@ -42,7 +42,7 @@ export function createJobStore({directory, generate, now = () => new Date().toIS
     const items = await Promise.all(ids.filter(id => UUID.test(id)).map(id => get(scope, id).catch(() => null)));
     return items.filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicJob);
   }
-  async function create(scope, description) {
+  async function create(scope, description, locale = 'zh') {
     if (!isValidDescription(description)) throw new Error('invalid_description');
     const scopeKey = scopeDir(scope);
     if (active.has(scopeKey)) throw new Error('job_already_running');
@@ -52,14 +52,14 @@ export function createJobStore({directory, generate, now = () => new Date().toIS
     const id = randomUUID();
     active.get(scopeKey).id = id;
     const dir = jobDir(scope, id);
-    const job = {id, description: description.trim(), status: 'queued', createdAt: now(), updatedAt: now()};
+    const job = {id, locale, description: description.trim(), status: 'queued', createdAt: now(), updatedAt: now()};
     try { await mkdir(dir, {recursive: true, mode: 0o700}); await save(dir, job); }
     catch (error) { active.delete(scopeKey); throw error; }
     const run = async () => {
       try {
         job.status = 'generating'; job.updatedAt = now(); await save(dir, job);
         if (controller.signal.aborted) throw new Error('cancelled');
-        const result = await generate({description: job.description, signal: controller.signal});
+        const result = await generate({description: job.description, locale: job.locale, signal: controller.signal});
         if (controller.signal.aborted) throw new Error('cancelled');
         await writeFile(path.join(dir, 'simulator.html'), result.html, {mode: 0o600});
         job.status = 'completed';

@@ -49,11 +49,16 @@ export function createApp({store, local = false, verifyIdentity, dist = path.joi
     const scope = scopeFor(req, local);
     if (!scope) return json(res, 401, {error: 'authentication_required'});
     try {
+      if (url.pathname === '/api/locale' && req.method === 'GET') {
+        const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(part => part.trim().split('=', 2)));
+        const locale = cookies['__Host-xclaw_app_locale'] || cookies.xclaw_app_locale;
+        return json(res, 200, {locale: locale === 'zh' || locale === 'en' ? locale : null});
+      }
       if (url.pathname === '/api/jobs' && req.method === 'GET') return json(res, 200, {jobs: await store.list(scope)});
       if (url.pathname === '/api/jobs' && req.method === 'POST') {
         if (!sameOrigin(req, local)) return json(res, 403, {error: 'origin_invalid'});
         const value = await body(req);
-        return json(res, 202, await store.create(scope, value.description));
+        return json(res, 202, await store.create(scope, value.description, value.locale === 'en' ? 'en' : 'zh'));
       }
       const cancelMatch = /^\/api\/jobs\/([0-9a-f-]+)\/cancel$/.exec(url.pathname);
       if (req.method === 'POST' && cancelMatch) {
@@ -88,6 +93,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (visualUrl && !local) throw new Error('local_visual_renderer_requires_local_mode');
   const visualGateway = visualUrl ? createGateway({baseUrl: process.env.OPENAI_API_BASE || process.env.OPENAI_BASE_URL, apiKey: process.env.OPENAI_API_KEY, model: process.env.TEARDOWN_VISION_MODEL || process.env.TEXT_MODEL}) : null;
   const visualReview = visualUrl ? createVisualReviewer({render: createLocalVisualRenderer({url: visualUrl}), gateway: visualGateway}) : undefined;
-  const store = createJobStore({directory: dataDirectory, generate: ({description, signal}) => generateSimulator({gateway, description, signal, visualReview})});
+  const store = createJobStore({directory: dataDirectory, generate: ({description, locale, signal}) => generateSimulator({gateway, description, locale, signal, visualReview})});
   createApp({store, local, verifyIdentity}).listen(Number(process.env.PORT || 3000), local ? '127.0.0.1' : '0.0.0.0');
 }

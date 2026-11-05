@@ -3,44 +3,49 @@ import {createRoot} from 'react-dom/client';
 import {Box, Plus, Sparkles, RotateCw, ExternalLink} from 'lucide-react';
 import {Button, Card, Textarea} from './ui.jsx';
 import {isValidDescription, MAX_DESCRIPTION_LENGTH} from './description.mjs';
+import {initialLocale, messages} from './i18n.mjs';
 import './style.css';
 
-const labels = {queued: '排队中', generating: '生成中', completed: '已完成', failed: '生成失败', cancelled: '已取消'};
 async function api(url, options) {
   const r = await fetch(url, options); const value = await r.json();
   if (!r.ok) throw new Error(value.error || 'request_failed');
   return value;
 }
 function App() {
+  const [locale, setLocale] = useState(() => initialLocale(localStorage.getItem('teardown-locale'), navigator.language));
+  const t = messages[locale];
+  useEffect(() => { if (localStorage.getItem('teardown-locale')) return; api('/api/locale').then(({locale: preferred}) => { if (preferred === 'zh' || preferred === 'en') setLocale(preferred); }).catch(() => {}); }, []);
+  useEffect(() => { document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'; }, [locale]);
   const [description, setDescription] = useState(''); const [jobs, setJobs] = useState([]);
-  const [selected, setSelected] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [loadError, setLoadError] = useState('');
+  const [selected, setSelected] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [loadError, setLoadError] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState(null); const [previewError, setPreviewError] = useState(false);
   const refresh = useCallback(async () => {
-    try { const value = await api('/api/jobs'); setJobs(value.jobs); setLoadError(''); }
-    catch { setLoadError('无法读取任务，请检查连接并重试。'); }
+    try { const value = await api('/api/jobs'); setJobs(value.jobs); setLoadError(false); }
+    catch { setLoadError(true); }
   }, []);
   useEffect(() => { void refresh(); const id = setInterval(refresh, 3000); return () => clearInterval(id); }, [refresh]);
   const active = jobs.find(job => job.id === selected) || jobs[0];
+  useEffect(() => {
+    const controller = new AbortController(); setPreviewHtml(null); setPreviewError(false);
+    if (active?.status === 'completed') fetch(`/api/jobs/${active.id}/preview`, {signal: controller.signal}).then(r => { if (!r.ok) throw new Error('preview_failed'); return r.text(); }).then(setPreviewHtml).catch(e => { if (e.name !== 'AbortError') setPreviewError(true); });
+    return () => controller.abort();
+  }, [active?.id, active?.status]);
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError('');
-    try {
-      const job = await api('/api/jobs', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({description})});
-      setSelected(job.id); setDescription(''); await refresh();
-    } catch (err) { setError(err.message === 'job_already_running' ? '已有任务正在生成，请等待完成。' : err.message === 'job_capacity_reached' ? '当前任务较多，请稍后重试。' : '无法创建任务，请检查输入或稍后重试。'); }
+    try { const job = await api('/api/jobs', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({description, locale})}); setSelected(job.id); setDescription(''); await refresh(); }
+    catch (err) { setError(err.message === 'job_already_running' ? 'busyError' : err.message === 'job_capacity_reached' ? 'capacityError' : 'createError'); }
     finally { setBusy(false); }
   }
-  async function cancel(id) {
-    try { await api(`/api/jobs/${id}/cancel`, {method: 'POST'}); await refresh(); }
-    catch { setError('无法取消任务，请刷新后重试。'); }
-  }
+  async function cancel(id) { try { await api(`/api/jobs/${id}/cancel`, {method:'POST'}); await refresh(); } catch { setError('cancelError'); } }
   return <div className="shell">
-    <header className="top"><div className="brand"><Box aria-hidden="true"/><strong>4yi Teardown</strong></div><span className="top-sub">机械模拟器工作台</span></header>
-    <div className="layout"><aside className="sidebar"><Button onClick={() => {setSelected(null); document.querySelector('#description')?.focus();}}><Plus data-icon="inline-start"/>新建任务</Button><h2>生成任务</h2><div className="task-list">{jobs.length === 0 ? <p className="muted">暂无任务</p> : jobs.map(job => <button className={`task ${active?.id === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelected(job.id)}><Box aria-hidden="true"/><span><strong>{job.description}</strong><small>{labels[job.status] || job.status}</small></span></button>)}</div></aside>
-    <main className="main"><div className="heading"><h1>生成机械模拟器</h1><p>描述机械结构和你希望了解的工作原理，生成可交互的 3D 页面。</p></div>
-      <Card><form onSubmit={submit} className="form"><label htmlFor="description">你想了解什么？</label><Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} maxLength={MAX_DESCRIPTION_LENGTH} required aria-describedby="description-help" placeholder="例如：汽车模型，或展示曲柄连杆如何把旋转运动转换成往复运动。"/><p id="description-help" className="muted">可以输入简短名称，例如“汽车模型”；补充部件、运动方式和交互需求可让结果更准确。</p><div className="actions"><Button type="submit" disabled={busy || !isValidDescription(description)}><Sparkles data-icon="inline-start"/>{busy ? '正在提交…' : '生成模拟器'}</Button></div></form></Card>
-      {(error || loadError) && <div role="alert" className="alert">{error || loadError}</div>}
-      <div className="section-title"><h2>任务结果</h2><Button variant="outline" onClick={refresh}><RotateCw data-icon="inline-start"/>刷新</Button></div>
-      <Card className="result">{!active ? <div className="empty"><Box/><h3>从一个问题开始</h3><p>提交描述后，生成进度和结果会显示在这里。</p></div> : <><div className="result-head"><div className="result-description"><h3>{active.description.length > 60 ? `${active.description.slice(0, 60)}…` : active.description}</h3>{active.description.length > 60 && <details><summary>查看完整描述</summary><p>{active.description}</p></details>}<p className="muted">{labels[active.status] || active.status}</p></div><div className="actions">{['queued', 'generating'].includes(active.status) && <Button variant="outline" onClick={() => cancel(active.id)}>取消任务</Button>}{['failed', 'cancelled'].includes(active.status) && <Button variant="outline" onClick={() => setDescription(active.description)}>重新编辑</Button>}{active.status === 'completed' && <Button variant="outline" onClick={() => window.open(`/api/jobs/${active.id}/preview`, '_blank', 'noopener,noreferrer')}><ExternalLink data-icon="inline-start"/>打开预览</Button>}</div></div>{active.status === 'completed' ? <iframe title="模拟器预览" sandbox="allow-scripts" src={`/api/jobs/${active.id}/preview`} /> : <div className="empty"><p>{active.status === 'failed' ? active.error === 'balance_required' ? '模型请求未通过额度检查，请检查该安装的网关额度。' : '任务未完成，请重新提交。' : active.status === 'cancelled' ? '任务已取消。' : '正在生成，完成后会自动显示预览。'}</p></div>}</>}</Card>
-    </main><aside className="help"><Card><h2>试试这些问题</h2><p className="muted">选择一个示例，再按需要调整。</p>{['展示曲柄连杆如何将旋转转为往复运动。','展示齿轮箱的啮合和传动过程。','展示飞机起落架如何折叠和展开。'].map(text => <button key={text} className="suggestion" onClick={() => setDescription(text)}>{text}</button>)}</Card><Card><h2>描述建议</h2><ul><li>说明机械对象及关键部件。</li><li>描述希望观察的动作或变化。</li><li>注明希望使用的交互方式。</li></ul></Card></aside></div>
+    <header className="top"><div className="brand"><Box aria-hidden="true"/><strong>4yi Teardown</strong></div><span className="top-sub">{t.subtitle}</span><Button variant="outline" onClick={() => { const next = locale === 'zh' ? 'en' : 'zh'; localStorage.setItem('teardown-locale', next); setLocale(next); }} aria-label={locale === 'zh' ? 'Switch to English' : '切换为简体中文'}>{t.language}</Button></header>
+    <div className="layout"><aside className="sidebar"><Button onClick={() => {setSelected(null); document.querySelector('#description')?.focus();}}><Plus data-icon="inline-start"/>{t.newTask}</Button><h2>{t.tasks}</h2><div className="task-list">{jobs.length === 0 ? <p className="muted">{t.noTasks}</p> : jobs.map(job => <button className={`task ${active?.id === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelected(job.id)}><Box aria-hidden="true"/><span><strong>{job.description}</strong><small>{t.statuses[job.status] || job.status}</small></span></button>)}</div></aside>
+    <main className="main"><div className="heading"><h1>{t.title}</h1><p>{t.intro}</p></div>
+      <Card><form onSubmit={submit} className="form"><label htmlFor="description">{t.question}</label><Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} maxLength={MAX_DESCRIPTION_LENGTH} required aria-describedby="description-help" placeholder={t.placeholder}/><p id="description-help" className="muted">{t.hint}</p><div className="actions"><Button type="submit" disabled={busy || !isValidDescription(description)}><Sparkles data-icon="inline-start"/>{busy ? t.submitting : t.generate}</Button></div></form></Card>
+      {(error || loadError) && <div role="alert" className="alert">{error ? t[error] : t.loadError}</div>}
+      <div className="section-title"><h2>{t.results}</h2><Button variant="outline" onClick={refresh}><RotateCw data-icon="inline-start"/>{t.refresh}</Button></div>
+      <Card className="result">{!active ? <div className="empty"><Box/><h3>{t.emptyTitle}</h3><p>{t.empty}</p></div> : <><div className="result-head"><div className="result-description"><h3>{active.description.length > 60 ? `${active.description.slice(0, 60)}…` : active.description}</h3>{active.description.length > 60 && <details><summary>{t.full}</summary><p>{active.description}</p></details>}<p className="muted">{t.statuses[active.status] || active.status}</p></div><div className="actions">{['queued','generating'].includes(active.status) && <Button variant="outline" onClick={() => cancel(active.id)}>{t.cancel}</Button>}{['failed','cancelled'].includes(active.status) && <Button variant="outline" onClick={() => setDescription(active.description)}>{t.edit}</Button>}{active.status === 'completed' && <Button variant="outline" onClick={() => window.open(`/api/jobs/${active.id}/preview`, '_blank', 'noopener,noreferrer')}><ExternalLink data-icon="inline-start"/>{t.open}</Button>}</div></div>{active.status === 'completed' ? previewError ? <p role="alert">{t.previewError}</p> : previewHtml ? <iframe title={t.preview} sandbox="allow-scripts" srcDoc={previewHtml}/> : <p>{t.working}</p> : <div className="empty"><p>{active.status === 'failed' ? active.error === 'balance_required' ? t.balance : t.failed : active.status === 'cancelled' ? t.cancelled : t.working}</p></div>}</>}</Card>
+    </main><aside className="help"><Card><h2>{t.suggestions}</h2><p className="muted">{t.select}</p>{t.examples.map(text => <button key={text} className="suggestion" onClick={() => setDescription(text)}>{text}</button>)}</Card><Card><h2>{t.tips}</h2><ul>{t.tipsList.map(tip => <li key={tip}>{tip}</li>)}</ul></Card></aside></div>
   </div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);

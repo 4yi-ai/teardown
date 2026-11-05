@@ -32,9 +32,9 @@ export async function compileSimulator(source) {
   return result.outputFiles[0].text;
 }
 
-export function makeSimulatorHtml(script) {
+export function makeSimulatorHtml(script, locale = 'en') {
   const safeScript = script.replace(/<\/script/gi, '<\\/script');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><title>Teardown simulator</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}#app{width:100%;height:100%}</style></head><body><main id="app"></main><script>${safeScript}</script></body></html>`;
+  return `<!doctype html><html lang="${locale === 'zh' ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><title>Teardown simulator</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}#app{width:100%;height:100%}</style></head><body><main id="app"></main><script>${safeScript}</script></body></html>`;
 }
 
 const tool = (name, description, properties, required = []) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties, required, additionalProperties: false}}});
@@ -47,11 +47,11 @@ const tools = [
 ];
 
 /** Runs bounded multi-file authoring and static compilation; generated code is never executed here. */
-export async function generateSimulator({gateway, description, signal, onProgress = () => {}, visualReview}) {
+export async function generateSimulator({gateway, description, locale = 'zh', signal, onProgress = () => {}, visualReview}) {
   if (!isValidDescription(description)) throw new Error('invalid_description');
   const skill = await readFile(path.join(root, 'SKILL.md'), 'utf8');
   const workspace = createWorkspace();
-  const messages = [{role: 'system', content: `You create interactive educational 3D mechanical simulators. Follow the principles in this skill where possible:\n${skill}\nUse write_file to create a small multi-file JavaScript project. Use main.js as the entry. Project-relative imports must include their .js extension; the only package import allowed is 'three'. Put UI and canvas in #app, use responsive sizing and animation, and include controls. Do not use fetch or external assets. Call build_simulator and fix any errors, then call finish. Keep each file concise.`},
+  const messages = [{role: 'system', content: `You create interactive educational 3D mechanical simulators. Follow the principles in this skill where possible:\n${skill}\nUse write_file to create a small multi-file JavaScript project. Use main.js as the entry. Project-relative imports must include their .js extension; the only package import allowed is 'three'. Put UI and canvas in #app, use responsive sizing and animation, and include controls. Do not use fetch or external assets. Call build_simulator and fix any errors, then call finish. Keep each file concise. All visible interface text and labels must be in ${locale === 'en' ? 'English' : 'Simplified Chinese'}.`},
     {role: 'user', content: description.trim()}];
   let reviews = 0;
   for (let attempt = 0; attempt < 16; attempt++) {
@@ -75,7 +75,7 @@ export async function generateSimulator({gateway, description, signal, onProgres
           case 'finish':
             if (calls.length !== 1) throw new Error('finish_must_be_separate');
             {
-              const html = makeSimulatorHtml(workspace.artifact());
+              const html = makeSimulatorHtml(workspace.artifact(), locale);
               if (visualReview) {
                 if (++reviews > 3) throw new Error('visual_review_limit');
                 onProgress('reviewing');
