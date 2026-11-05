@@ -25,7 +25,7 @@ test('creates a multi-file project, repairs a build, and produces a sandboxed pr
     const [name, args] = plan[attempts++];
     return {role: 'assistant', tool_calls: [{id: `call-${attempts}`, type: 'function', function: {name, arguments: JSON.stringify(args)}}]};
   }};
-  const output = await generateSimulator({gateway, description: 'A simple crank mechanism'});
+  const output = await generateSimulator({gateway, description: '汽车模型'});
   assert.equal(attempts, 5);
   assert.deepEqual(output.files, ['main.js', 'part.js']);
   assert.match(output.html, /connect-src 'none'/);

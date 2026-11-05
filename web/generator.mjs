@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {createWorkspace} from './workspace.mjs';
+import {isValidDescription} from './description.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const three = fileURLToPath(import.meta.resolve('three'));
@@ -47,7 +48,7 @@ const tools = [
 
 /** Runs bounded multi-file authoring and static compilation; generated code is never executed here. */
 export async function generateSimulator({gateway, description, signal, onProgress = () => {}, visualReview}) {
-  if (typeof description !== 'string' || description.trim().length < 8 || description.length > 8000) throw new Error('invalid_description');
+  if (!isValidDescription(description)) throw new Error('invalid_description');
   const skill = await readFile(path.join(root, 'SKILL.md'), 'utf8');
   const workspace = createWorkspace();
   const messages = [{role: 'system', content: `You create interactive educational 3D mechanical simulators. Follow the principles in this skill where possible:\n${skill}\nUse write_file to create a small multi-file JavaScript project. Use main.js as the entry. Project-relative imports must include their .js extension; the only package import allowed is 'three'. Put UI and canvas in #app, use responsive sizing and animation, and include controls. Do not use fetch or external assets. Call build_simulator and fix any errors, then call finish. Keep each file concise.`},

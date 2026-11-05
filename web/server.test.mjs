@@ -35,11 +35,17 @@ test('HTTP jobs require identity and same origin, and preview enforces sandbox C
   try {
     assert.equal((await fetch(`${base}/healthz`)).status, 200);
     assert.equal((await fetch(`${base}/api/jobs`)).status, 401);
-    const init = {method: 'POST', headers: {...auth, origin: 'https://other.example', 'content-type': 'application/json'}, body: JSON.stringify({description: 'A rotating crank'})};
+    const init = {method: 'POST', headers: {...auth, origin: 'https://other.example', 'content-type': 'application/json'}, body: JSON.stringify({description: '汽车模型'})};
     assert.equal((await fetch(`${base}/api/jobs`, init)).status, 403);
     init.headers.origin = 'https://app.example';
+    for (const description of ['', '  \n\t\u3000', 'a'.repeat(8001)]) {
+      const invalid = await fetch(`${base}/api/jobs`, {...init, body: JSON.stringify({description})});
+      assert.equal(invalid.status, 400);
+      assert.equal((await invalid.json()).error, 'invalid_description');
+    }
     const response = await fetch(`${base}/api/jobs`, init); assert.equal(response.status, 202);
     const job = await response.json();
+    assert.equal(job.description, '汽车模型');
     assert.equal((await fetch(`${base}/api/jobs/${job.id}`, {headers: {...auth, 'x-xclaw-user-id': 'bob'}})).status, 404);
     let preview;
     for (let i = 0; i < 100; i++) { preview = await fetch(`${base}/api/jobs/${job.id}/preview`, {headers: auth}); if (preview.status === 200) break; await new Promise(resolve => setTimeout(resolve, 5)); }

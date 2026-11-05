@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {mkdir, readFile, readdir, rename, writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {isValidDescription} from './description.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const publicJob = ({id, description, status, createdAt, updatedAt, error}) => ({id, description, status, createdAt, updatedAt, ...(error ? {error} : {})});
@@ -42,7 +43,7 @@ export function createJobStore({directory, generate, now = () => new Date().toIS
     return items.filter(Boolean).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicJob);
   }
   async function create(scope, description) {
-    if (typeof description !== 'string' || description.trim().length < 8 || description.length > 8000) throw new Error('invalid_description');
+    if (!isValidDescription(description)) throw new Error('invalid_description');
     const scopeKey = scopeDir(scope);
     if (active.has(scopeKey)) throw new Error('job_already_running');
     if (active.size >= maxActive) throw new Error('job_capacity_reached');
